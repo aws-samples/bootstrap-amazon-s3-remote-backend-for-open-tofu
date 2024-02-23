@@ -1,0 +1,13 @@
+compact: true
+download-external-modules: true
+evaluate-variables: true
+framework:
+  - all
+quiet: true
+skip-check: []
+skip-fixes: true
+skip-framework:
+  - dockerfile
+  - openapi
+skip-download: true
+soft-fail: false
