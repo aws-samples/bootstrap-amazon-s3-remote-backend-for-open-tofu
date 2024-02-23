@@ -154,7 +154,7 @@ Before running the bootstrap script, ensure you have the following:
 Clone the repository and navigate to the bootstrap directory:
 
 ````bash
-git clone https://github.com/<to fill out>/open-tofu-bootstrap.git
+git clone https://github.com/aws-samples/bootstrap-amazon-s3-remote-backend-for-open-tofu.git
 ````
 
 ## Usage
