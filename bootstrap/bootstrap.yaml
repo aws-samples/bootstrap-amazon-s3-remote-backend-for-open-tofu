@@ -1,0 +1,188 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Base infrastructure for the OpenTofu remote backend
+
+
+Resources:
+  rKMSOpenTofuBackendKey:
+    Metadata:
+        cfn_nag:
+          rules_to_suppress:
+            - id: F19
+              reason: "Key rotation is intentionally disabled due to a very low exhaustion risk, https://docs.aws.amazon.com/kms/latest/developerguide/rotate-keys.html#rotating-kms-keys"
+    Type: AWS::KMS::Key
+    Properties:
+      Description: AWS KMS Key to encrypt the OpenTofu backend Amazon S3 bucket
+      Enabled: True
+      EnableKeyRotation: False
+      KeyPolicy:
+        Version: 2012-10-17
+        Id: key-s3-bucket-opentofu-backend
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${AWS::AccountId}:root
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: DeleteProtection
+            Principal: "*"
+            Effect: Deny
+            Action:
+              - kms:ScheduleKeyDeletion
+            Resource: "*"
+
+
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+
+
+
+  rOpenTofuRemoteBackendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: 'aws:kms'
+              KMSMasterKeyID: !GetAtt rKMSOpenTofuBackendKey.KeyId
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionsForStateFile
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 1
+                StorageClass: INTELLIGENT_TIERING
+            NoncurrentVersionTransitions:
+              - TransitionInDays: 1
+                StorageClass: GLACIER
+      VersioningConfiguration:
+        Status: Enabled
+      LoggingConfiguration:
+        DestinationBucketName: !Ref rAccessLogsBucket
+        LogFilePrefix: 'open-tofu/'
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+
+  rOpenTofuRemoteBackendBucketBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref rOpenTofuRemoteBackendBucket
+      PolicyDocument:
+        Statement:
+          - Sid: DenyDeletingOpenTofuStateFiles
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:DeleteObject"
+            Resource: !Sub "arn:aws:s3:::${rOpenTofuRemoteBackendBucket}/*"
+          - Sid: RestrictToTLSRequestsOnly
+            Principal: "*"
+            Action: "s3:*"
+            Effect: Deny
+            Resource:
+              - !Sub "arn:aws:s3:::${rOpenTofuRemoteBackendBucket}"
+              - !Sub "arn:aws:s3:::${rOpenTofuRemoteBackendBucket}/*"
+            Condition:
+              Bool:
+                "aws:SecureTransport": "false"
+
+
+
+  rAccessLogsBucket:
+    # checkov:skip=CKV_AWS_18:Ensure the Amazon S3 bucket has access logging enabled
+    Type: AWS::S3::Bucket
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W35
+            reason: "This is the bucket to store the access logs"
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-${AWS::AccountId}-access-logs
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToGlacier
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 1
+                StorageClass: GLACIER
+            NoncurrentVersionTransitions:
+              - TransitionInDays: 1
+                StorageClass: GLACIER
+      VersioningConfiguration:
+        Status: Enabled
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+
+
+  rAccessLogsBucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref rAccessLogsBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: 'S3ServerAccessLogsPolicy'
+            Effect: 'Allow'
+            Principal:
+              Service: 'logging.s3.amazonaws.com'
+            Action:
+              - 's3:PutObject'
+            Resource: !Sub 'arn:aws:s3:::${rAccessLogsBucket}/open-tofu/*'
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref AWS::AccountId
+          - Sid: RestrictToTLSRequestsOnly
+            Action: "s3:*"
+            Effect: Deny
+            Resource:
+              - !Sub "arn:aws:s3:::${rAccessLogsBucket}"
+              - !Sub "arn:aws:s3:::${rAccessLogsBucket}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+            Principal: "*"
+
+  rOpenTofuRemoteBackendDDB:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: open-tofu-remote-backend
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: LockID
+          AttributeType: S
+      KeySchema:
+        - AttributeName: LockID
+          KeyType: HASH
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+        KMSMasterKeyId: !GetAtt rKMSOpenTofuBackendKey.Arn
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+
+
+Outputs:
+  OpenTofuBackendBucketName:
+    Value: !Ref rOpenTofuRemoteBackendBucket
+    Export:
+      Name: 'OpenTofuBackendBucketName'
+
+  OpenTofuBackendDynamoDBName:
+    Value: !Ref rOpenTofuRemoteBackendDDB
+    Export:
+      Name: 'OpenTofuBackendDynamoDBName'

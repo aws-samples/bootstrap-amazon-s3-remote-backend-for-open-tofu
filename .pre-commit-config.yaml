@@ -1,0 +1,87 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      # Git style
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-vcs-permalinks
+      - id: forbid-new-submodules
+      - id: no-commit-to-branch
+
+      # Common errors
+      - id: end-of-file-fixer
+        exclude: ^(Documentation/.*|.*.drawio)$
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+        exclude: ^(Documentation/.*|.*.drawio)$
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+        exclude: ^(bootstrap/.*.yaml|bootstrap/.*.yml)$
+      - id: check-merge-conflict
+      - id: check-executables-have-shebangs
+
+      # Cross platform
+      - id: check-case-conflict
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+      # Security
+      - id: detect-aws-credentials
+        args: ["--allow-missing-credentials"]
+      - id: detect-private-key
+
+
+
+  #For Terraform
+  - repo: https://github.com/antonbabenko/pre-commit-terraform
+    rev: v1.82.0
+    hooks:
+      - id: terraform_fmt
+      - id: terraform_validate
+        exclude: modules/.*/[^/]+$
+  - repo: https://github.com/bridgecrewio/checkov
+    rev: 2.4.10
+    hooks:
+      - id: checkov
+        name: Checkov
+        description: This hook runs checkov.
+        entry: checkov -d . --quiet --config-file .checkov.yaml
+        language: python
+        pass_filenames: false
+        always_run: false
+        files: \.tf$
+        exclude: \.+.terraform\/.*$
+        require_serial: true
+
+  - repo: https://github.com/stelligent/cfn_nag
+    rev: v0.8.10
+    hooks:
+      - id: cfn-nag
+        name: stelligent CFN_NAG
+        description:  Looks for patterns in CloudFormation templates that may indicate insecure infrastructure.
+        entry: cfn_nag_scan --input-path
+        language: ruby
+        exclude: ^(.pre-commit-config.yaml)$
+        files: bootstrap/.*\.(yml|yaml)$
+
+  - repo: https://github.com/aws-cloudformation/cfn-lint
+    rev: v0.79.7
+    hooks:
+      - id: cfn-lint
+        files: bootstrap/.*\.(yml|yaml)$
+  - repo: https://github.com/jorisroovers/gitlint
+    rev: v0.19.1
+    hooks:
+      - id: gitlint
+        stages: [commit-msg]
+  - repo: https://github.com/asottile/add-trailing-comma
+    rev: v3.0.1
+    hooks:
+      - id: add-trailing-comma
+
+
+
+default_language_version:
+  python: python3.10
+default_stages: [commit, push]
